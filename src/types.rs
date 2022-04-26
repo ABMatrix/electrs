@@ -185,6 +185,7 @@ mod tests {
     use bitcoin::{hashes::hex::ToHex, Address, OutPoint, Txid};
     use serde_json::{from_str, json};
 
+    use sha2::{Digest, Sha256};
     use std::str::FromStr;
 
     #[test]
@@ -212,6 +213,15 @@ mod tests {
         let scripthash = ScriptHash::new(&addr.script_pubkey());
         assert_eq!(
             scripthash.to_hex(),
+            "00dfb264221d07712a144bda338e89237d1abd2db4086057573895ea2659766a"
+        );
+        let mut sha256 = Sha256::new();
+        sha256.input(&addr.script_pubkey());
+        let mut result = sha256.result()[..].to_vec();
+        result.reverse();
+        println!("hex: {}", result.to_hex());
+        assert_eq!(
+            result.to_hex(),
             "00dfb264221d07712a144bda338e89237d1abd2db4086057573895ea2659766a"
         );
     }

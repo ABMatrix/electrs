@@ -2,15 +2,18 @@ use anyhow::{bail, Context, Result};
 use bitcoin::{
     consensus::{deserialize, serialize},
     hashes::hex::{FromHex, ToHex},
-    BlockHash, Txid,
+    Address, BlockHash, Txid,
 };
 use crossbeam_channel::Receiver;
 use rayon::prelude::*;
 use serde_derive::Deserialize;
 use serde_json::{self, json, Value};
 
-use std::collections::{hash_map::Entry, HashMap};
 use std::iter::FromIterator;
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    str::FromStr,
+};
 
 use crate::{
     cache::Cache,
@@ -243,6 +246,30 @@ impl Rpc {
 
     fn relayfee(&self) -> Result<Value> {
         Ok(json!(self.daemon.get_relay_fee()?.as_btc())) // [BTC/kB]
+    }
+
+    fn wallet_get_balance(&self, client: &Client, (address,): &(String,)) -> Result<Value> {
+        let addr = Address::from_str(address.as_str())?;
+        let scripthash = ScriptHash::new(&addr.script_pubkey());
+        self.scripthash_get_balance(client, &(scripthash,))
+    }
+
+    fn wallet_get_history(&self, client: &Client, (address,): &(String,)) -> Result<Value> {
+        let addr = Address::from_str(address.as_str())?;
+        let scripthash = ScriptHash::new(&addr.script_pubkey());
+        self.scripthash_get_history(client, &(scripthash,))
+    }
+
+    fn wallet_list_unspent(&self, client: &Client, (address,): &(String,)) -> Result<Value> {
+        let addr = Address::from_str(address.as_str())?;
+        let scripthash = ScriptHash::new(&addr.script_pubkey());
+        self.scripthash_list_unspent(client, &(scripthash,))
+    }
+
+    fn wallet_subscribe(&self, client: &mut Client, (address,): &(String,)) -> Result<Value> {
+        let addr = Address::from_str(address.as_str())?;
+        let scripthash = ScriptHash::new(&addr.script_pubkey());
+        self.scripthash_subscribe(client, &(scripthash,))
     }
 
     fn scripthash_get_balance(
@@ -529,6 +556,10 @@ impl Rpc {
                 Params::ScriptHashGetHistory(args) => self.scripthash_get_history(client, args),
                 Params::ScriptHashListUnspent(args) => self.scripthash_list_unspent(client, args),
                 Params::ScriptHashSubscribe(args) => self.scripthash_subscribe(client, args),
+                Params::WalletGetBalance(args) => self.wallet_get_balance(client, args),
+                Params::WalletGetHistory(args) => self.wallet_get_history(client, args),
+                Params::WalletListUnspent(args) => self.wallet_list_unspent(client, args),
+                Params::WalletSubscribe(args) => self.wallet_subscribe(client, args),
                 Params::TransactionBroadcast(args) => self.transaction_broadcast(args),
                 Params::TransactionGet(args) => self.transaction_get(args),
                 Params::TransactionGetMerkle(args) => self.transaction_get_merkle(args),
@@ -557,6 +588,10 @@ enum Params {
     ScriptHashGetHistory((ScriptHash,)),
     ScriptHashListUnspent((ScriptHash,)),
     ScriptHashSubscribe((ScriptHash,)),
+    WalletGetBalance((String,)),
+    WalletGetHistory((String,)),
+    WalletListUnspent((String,)),
+    WalletSubscribe((String,)),
     TransactionGet(TxGetArgs),
     TransactionGetMerkle((Txid, usize)),
     Version((String, Version)),
@@ -574,6 +609,10 @@ impl Params {
             "blockchain.scripthash.get_history" => Params::ScriptHashGetHistory(convert(params)?),
             "blockchain.scripthash.listunspent" => Params::ScriptHashListUnspent(convert(params)?),
             "blockchain.scripthash.subscribe" => Params::ScriptHashSubscribe(convert(params)?),
+            "blockchain.wallet.get_balance" => Params::WalletGetBalance(convert(params)?),
+            "blockchain.wallet.get_history" => Params::WalletGetHistory(convert(params)?),
+            "blockchain.wallet.listunspent" => Params::WalletListUnspent(convert(params)?),
+            "blockchain.wallet.subscribe" => Params::WalletSubscribe(convert(params)?),
             "blockchain.transaction.broadcast" => Params::TransactionBroadcast(convert(params)?),
             "blockchain.transaction.get" => Params::TransactionGet(convert(params)?),
             "blockchain.transaction.get_merkle" => Params::TransactionGetMerkle(convert(params)?),
