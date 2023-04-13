@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use bitcoin::consensus::{deserialize, serialize};
-use bitcoin::{Block, BlockHash, OutPoint, Txid};
+use bitcoincore_rpc::bitcoin::consensus::{deserialize, serialize};
+use bitcoincore_rpc::bitcoin::{Block, BlockHash, OutPoint, Txid};
 
 use crate::{
     chain::{Chain, NewHeader},

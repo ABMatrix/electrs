@@ -1,5 +1,5 @@
 use anyhow::Result;
-use bitcoin::{
+use bitcoincore_rpc::bitcoin::{
     hashes::{sha256, Hash, HashEngine},
     Amount, Block, BlockHash, OutPoint, SignedAmount, Transaction, Txid,
 };
@@ -92,7 +92,7 @@ pub(crate) struct HistoryEntry {
     height: Height,
     #[serde(
         skip_serializing_if = "Option::is_none",
-        with = "bitcoin::util::amount::serde::as_sat::opt"
+        with = "bitcoincore_rpc::bitcoin::util::amount::serde::as_sat::opt"
     )]
     fee: Option<Amount>,
 }
@@ -135,9 +135,9 @@ pub struct ScriptHashStatus {
 /// Specific scripthash balance
 #[derive(Default, Eq, PartialEq, Serialize)]
 pub(crate) struct Balance {
-    #[serde(with = "bitcoin::util::amount::serde::as_sat", rename = "confirmed")]
+    #[serde(with = "bitcoincore_rpc::bitcoin::util::amount::serde::as_sat", rename = "confirmed")]
     confirmed_balance: Amount,
-    #[serde(with = "bitcoin::util::amount::serde::as_sat", rename = "unconfirmed")]
+    #[serde(with = "bitcoincore_rpc::bitcoin::util::amount::serde::as_sat", rename = "unconfirmed")]
     mempool_delta: SignedAmount,
 }
 
@@ -148,7 +148,7 @@ pub(crate) struct UnspentEntry {
     height: usize, // 0 = mempool entry
     tx_hash: Txid,
     tx_pos: u32,
-    #[serde(with = "bitcoin::util::amount::serde::as_sat")]
+    #[serde(with = "bitcoincore_rpc::bitcoin::util::amount::serde::as_sat")]
     value: Amount,
 }
 
@@ -222,7 +222,7 @@ impl ScriptHashStatus {
     pub fn new(scripthash: ScriptHash) -> Self {
         Self {
             scripthash,
-            tip: BlockHash::default(),
+            tip: BlockHash::from_slice(&[0u8; 32]).unwrap(),
             confirmed: HashMap::new(),
             mempool: Vec::new(),
             history: Vec::new(),
@@ -542,7 +542,7 @@ fn filter_block_txs<T: Send>(
 #[cfg(test)]
 mod tests {
     use super::HistoryEntry;
-    use bitcoin::{hashes::hex::FromHex, Amount, Txid};
+    use bitcoincore_rpc::bitcoin::{hashes::hex::FromHex, Amount, Txid};
     use serde_json::json;
 
     #[test]

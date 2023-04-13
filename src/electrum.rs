@@ -1,5 +1,6 @@
+#![allow(deprecated)]
 use anyhow::{bail, Context, Result};
-use bitcoin::{
+use bitcoincore_rpc::bitcoin::{
     consensus::{deserialize, serialize},
     hashes::hex::{FromHex, ToHex},
     Address, BlockHash, Txid,
@@ -14,6 +15,7 @@ use std::{
     collections::{hash_map::Entry, HashMap},
     str::FromStr,
 };
+use bitcoincore_rpc::RpcApi;
 
 use crate::{
     cache::Cache,
@@ -140,9 +142,11 @@ impl Rpc {
             metrics::default_duration_buckets(),
         );
 
-        let tracker = Tracker::new(config, metrics)?;
         let signal = Signal::new();
-        let daemon = Daemon::connect(config, signal.exit_flag(), tracker.metrics())?;
+        let daemon = Daemon::connect(config, signal.exit_flag(), &metrics)?;
+        let genesis_hash = daemon.rpc().get_block_hash(0)?;
+        let genesis_header = serialize(&daemon.rpc().get_block_header(&genesis_hash)?);
+        let tracker = Tracker::new(config, metrics, genesis_header)?;
         let cache = Cache::new(tracker.metrics());
         Ok(Self {
             tracker,
@@ -383,11 +387,7 @@ impl Rpc {
     fn transaction_get(&self, args: &TxGetArgs) -> Result<Value> {
         let (txid, verbose) = args.into();
         if verbose {
-            let blockhash = self
-                .tracker
-                .lookup_transaction(&self.daemon, txid)?
-                .map(|(blockhash, _tx)| blockhash);
-            return self.daemon.get_transaction_info(&txid, blockhash);
+            return self.daemon.get_transaction_info(&txid);
         }
         if let Some(tx) = self.cache.get_tx(&txid, |tx| serialize(tx)) {
             return Ok(json!(tx.to_hex()));

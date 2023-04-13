@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
-use bitcoin::consensus::deserialize;
-use bitcoin::hashes::hex::FromHex;
-use bitcoin::network::constants;
-use bitcoin::{BlockHash, BlockHeader};
+use bitcoincore_rpc::bitcoin::consensus::deserialize;
+use bitcoincore_rpc::bitcoin::{BlockHash, BlockHeader};
+use bitcoincore_rpc::bitcoin::hashes::Hash;
 
 /// A new header found, to be added to the chain at specific height
 pub(crate) struct NewHeader {
@@ -38,16 +37,9 @@ pub struct Chain {
 
 impl Chain {
     // create an empty chain
-    pub fn new(network: constants::Network) -> Self {
-        let genesis_header_hex = match network {
-            constants::Network::Bitcoin => "0100000000000000000000000000000000000000000000000000000000000000000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a29ab5f49ffff001d1dac2b7c",
-            constants::Network::Testnet => "0100000000000000000000000000000000000000000000000000000000000000000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4adae5494dffff001d1aa4ae18",
-            constants::Network::Regtest => "0100000000000000000000000000000000000000000000000000000000000000000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4adae5494dffff7f2002000000",
-            constants::Network::Signet => "0100000000000000000000000000000000000000000000000000000000000000000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a008f4d5fae77031e8ad22203",
-        };
-        let genesis_header_bytes = Vec::from_hex(genesis_header_hex).unwrap();
-        let genesis: BlockHeader = deserialize(&genesis_header_bytes).unwrap();
-        assert_eq!(genesis.prev_blockhash, BlockHash::default());
+    pub fn new(genesis_header: &[u8]) -> Self {
+        let genesis: BlockHeader = deserialize(&genesis_header).unwrap();
+        assert_eq!(genesis.prev_blockhash, BlockHash::from_slice(&[0u8; 32]).unwrap());
         Self {
             headers: vec![(genesis.block_hash(), genesis)],
             heights: std::iter::once((genesis.block_hash(), 0)).collect(), // genesis header @ zero height
@@ -154,14 +146,14 @@ impl Chain {
 #[cfg(test)]
 mod tests {
     use super::{Chain, NewHeader};
-    use bitcoin::consensus::deserialize;
-    use bitcoin::hashes::hex::{FromHex, ToHex};
-    use bitcoin::network::constants::Network::Regtest;
-    use bitcoin::BlockHeader;
+    use bitcoincore_rpc::bitcoin::consensus::deserialize;
+    use bitcoincore_rpc::bitcoin::hashes::hex::{FromHex, ToHex};
+    use bitcoincore_rpc::bitcoin::network::constants::Network::Regtest;
+    use bitcoincore_rpc::bitcoin::BlockHeader;
 
     #[test]
     fn test_genesis() {
-        let regtest = Chain::new(Regtest);
+        let regtest = Chain::new(&hex::decode("010000000000000000000000000000000000000000000000000000000000000000000000696ad20e2dd4365c7459b4a4a5af743d5e92c6da3229e6532cd605f6533f2a5bdae5494dffff7f2002000000").unwrap());
         assert_eq!(regtest.height(), 0);
         assert_eq!(
             regtest.tip().to_hex(),
@@ -189,7 +181,7 @@ mod tests {
             .collect();
 
         for chunk_size in 1..hex_headers.len() {
-            let mut regtest = Chain::new(Regtest);
+            let regtest = Chain::new(&hex::decode("010000000000000000000000000000000000000000000000000000000000000000000000696ad20e2dd4365c7459b4a4a5af743d5e92c6da3229e6532cd605f6533f2a5bdae5494dffff7f2002000000").unwrap());
             let mut height = 0;
             let mut tip = regtest.tip();
             for chunk in headers.chunks(chunk_size) {
@@ -208,7 +200,7 @@ mod tests {
         }
 
         // test loading from a list of headers and tip
-        let mut regtest = Chain::new(Regtest);
+        let regtest = Chain::new(&hex::decode("010000000000000000000000000000000000000000000000000000000000000000000000696ad20e2dd4365c7459b4a4a5af743d5e92c6da3229e6532cd605f6533f2a5bdae5494dffff7f2002000000").unwrap());
         regtest.load(headers.clone(), headers.last().unwrap().block_hash());
         assert_eq!(regtest.height(), headers.len());
 
@@ -241,7 +233,7 @@ mod tests {
         );
 
         // test reorg
-        let mut regtest = Chain::new(Regtest);
+        let regtest = Chain::new(&hex::decode("010000000000000000000000000000000000000000000000000000000000000000000000696ad20e2dd4365c7459b4a4a5af743d5e92c6da3229e6532cd605f6533f2a5bdae5494dffff7f2002000000").unwrap());
         regtest.load(headers.clone(), headers.last().unwrap().block_hash());
         let height = regtest.height();
 

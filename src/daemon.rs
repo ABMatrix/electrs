@@ -1,9 +1,12 @@
 use anyhow::{Context, Result};
 
-use bitcoin::{
-    consensus::serialize, hashes::hex::ToHex, Amount, Block, BlockHash, Transaction, Txid,
+use bitcoincore_rpc::bitcoin::{
+    hashes::hex::ToHex, Block,
 };
-use bitcoincore_rpc::{json, jsonrpc, Auth, Client, RpcApi};
+use bitcoincore_rpc::{
+    json, jsonrpc, Auth, Client, RpcApi,
+    bitcoin::{ Amount, Transaction, Txid, consensus::serialize, BlockHash}
+};
 use crossbeam_channel::Receiver;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
@@ -166,13 +169,12 @@ impl Daemon {
     pub(crate) fn get_transaction_info(
         &self,
         txid: &Txid,
-        blockhash: Option<BlockHash>,
     ) -> Result<Value> {
         // No need to parse the resulting JSON, just return it as-is to the client.
         self.rpc
             .call(
                 "getrawtransaction",
-                &[json!(txid), json!(true), json!(blockhash)],
+                &[json!(txid), json!(true)],
             )
             .context("failed to get transaction info")
     }
@@ -189,10 +191,10 @@ impl Daemon {
     pub(crate) fn get_transaction(
         &self,
         txid: &Txid,
-        blockhash: Option<BlockHash>,
+        _blockhash: Option<BlockHash>,
     ) -> Result<Transaction> {
         self.rpc
-            .get_raw_transaction(txid, blockhash.as_ref())
+            .get_raw_transaction(txid)
             .context("failed to get transaction")
     }
 
@@ -230,6 +232,10 @@ impl Daemon {
 
     pub(crate) fn new_block_notification(&self) -> Receiver<()> {
         self.p2p.lock().new_block_notification()
+    }
+
+    pub fn rpc(&self) -> &Client {
+        &self.rpc
     }
 }
 

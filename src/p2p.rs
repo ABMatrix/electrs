@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use bitcoin::{
+use bitcoincore_rpc::bitcoin::{
     consensus::{
         encode::{self, ReadExt, VarInt},
         Decodable,
@@ -10,7 +10,7 @@ use bitcoin::{
         message_blockdata::{GetHeadersMessage, Inventory},
         message_network,
     },
-    secp256k1::{self, rand::Rng},
+    secp256k1::rand::{Rng, thread_rng},
     Block, BlockHash, BlockHeader, Network,
 };
 use crossbeam_channel::{bounded, select, Receiver, Sender};
@@ -19,6 +19,7 @@ use std::io::{self, ErrorKind, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use bitcoincore_rpc::bitcoin::hashes::Hash;
 
 use crate::{
     chain::{Chain, NewHeader},
@@ -35,7 +36,7 @@ impl Request {
     fn get_new_headers(chain: &Chain) -> Request {
         Request::GetNewHeaders(GetHeadersMessage::new(
             chain.locator(),
-            BlockHash::default(),
+            BlockHash::from_slice(&[0u8; 32]).unwrap(),
         ))
     }
 
@@ -198,7 +199,8 @@ impl Connection {
         let stream = Arc::clone(&conn);
         crate::thread::spawn("p2p_recv", move || loop {
             let start = Instant::now();
-            let raw_msg = RawNetworkMessage::consensus_decode(&*stream);
+            let mut stream = &*stream.clone();
+            let raw_msg = RawNetworkMessage::consensus_decode(&mut stream);
             {
                 let duration = duration_to_seconds(start.elapsed());
                 let label = format!(
@@ -317,12 +319,12 @@ fn build_version_message() -> NetworkMessage {
     let services = constants::ServiceFlags::NONE;
 
     NetworkMessage::Version(message_network::VersionMessage {
-        version: constants::PROTOCOL_VERSION,
+        version: 70015,
         services,
         timestamp,
         receiver: address::Address::new(&addr, services),
         sender: address::Address::new(&addr, services),
-        nonce: secp256k1::rand::thread_rng().gen(),
+        nonce: thread_rng().gen(),
         user_agent: format!("/electrs:{}/", ELECTRS_VERSION),
         start_height: 0,
         relay: false,
@@ -367,7 +369,7 @@ impl RawNetworkMessage {
 }
 
 impl Decodable for RawNetworkMessage {
-    fn consensus_decode<D: io::Read>(mut d: D) -> Result<Self, encode::Error> {
+    fn consensus_decode<D: io::Read + ?Sized>(mut d: &mut D) -> Result<Self, encode::Error> {
         let magic = Decodable::consensus_decode(&mut d)?;
         let cmd = Decodable::consensus_decode(&mut d)?;
 

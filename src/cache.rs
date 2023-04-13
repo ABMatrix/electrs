@@ -1,4 +1,5 @@
-use bitcoin::{Transaction, Txid};
+#![allow(deprecated)]
+use bitcoincore_rpc::bitcoin::{Transaction, Txid};
 use parking_lot::RwLock;
 
 use std::collections::HashMap;

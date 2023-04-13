@@ -1,4 +1,4 @@
-use bitcoin::network::constants::Network;
+use bitcoincore_rpc::bitcoin::network::constants::Network;
 use bitcoincore_rpc::Auth;
 use dirs_next::home_dir;
 

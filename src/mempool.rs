@@ -1,12 +1,12 @@
+#![allow(deprecated)]
 use anyhow::Result;
-
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::convert::TryFrom;
 use std::iter::FromIterator;
 use std::ops::Bound;
 
-use bitcoin::hashes::Hash;
-use bitcoin::{Amount, OutPoint, Transaction, Txid};
+use bitcoincore_rpc::bitcoin::hashes::Hash;
+use bitcoincore_rpc::bitcoin::{Amount, OutPoint, Transaction, Txid};
 use bitcoincore_rpc::json;
 use rayon::prelude::*;
 use serde::ser::{Serialize, SerializeSeq, Serializer};
@@ -248,7 +248,7 @@ impl Serialize for FeeHistogram {
 #[cfg(test)]
 mod tests {
     use super::FeeHistogram;
-    use bitcoin::Amount;
+    use bitcoincore_rpc::bitcoin::Amount;
     use serde_json::json;
 
     #[test]

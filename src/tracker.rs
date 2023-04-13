@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use bitcoin::{BlockHash, Transaction, Txid};
+use bitcoincore_rpc::bitcoin::{BlockHash, Transaction, Txid};
 
 use crate::{
     cache::Cache,
@@ -27,9 +27,9 @@ pub(crate) enum Error {
 }
 
 impl Tracker {
-    pub fn new(config: &Config, metrics: Metrics) -> Result<Self> {
+    pub fn new(config: &Config, metrics: Metrics, genesis_header: Vec<u8>) -> Result<Self> {
         let store = DBStore::open(&config.db_path, config.auto_reindex)?;
-        let chain = Chain::new(config.network);
+        let chain = Chain::new(&genesis_header);
         Ok(Self {
             index: Index::load(
                 store,

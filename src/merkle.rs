@@ -1,4 +1,4 @@
-use bitcoin::{
+use bitcoincore_rpc::bitcoin::{
     hashes::{hex::ToHex, Hash},
     TxMerkleNode, Txid,
 };
@@ -54,7 +54,7 @@ impl Proof {
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{consensus::encode::deserialize, Block, Txid};
+    use bitcoincore_rpc::bitcoin::{consensus::encode::deserialize, Block, Txid};
     use std::path::Path;
 
     use super::Proof;

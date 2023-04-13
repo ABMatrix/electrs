@@ -22,8 +22,7 @@ spec = "internal/config_specification.toml"
 
 [dependencies]
 anyhow = "1.0"
-bitcoin = { version = "0.27.1", features = ["use-serde", "rand"] }
-bitcoincore-rpc = "0.14.0"
+bitcoincore-rpc = { git = "https://github.com/ABMatrix/rust-dogecoincore-rpc.git" }
 configure_me = "0.4"
 crossbeam-channel = "0.5"
 dirs-next = "2.0"
@@ -55,3 +54,7 @@ configure_me_codegen = "0.4.2"
 [dev-dependencies]
 tempfile = "3.3"
 sha2 = "0.8"
+hex = "0.4.0"
+
+[patch.crates-io]
+bitcoin = { git = "https://github.com/ABMatrix/rust-dogecoin.git", features = ["rand"]}
