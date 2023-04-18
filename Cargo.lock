@@ -99,7 +99,7 @@ dependencies = [
 [[package]]
 name = "bitcoincore-rpc"
 version = "0.16.0"
-source = "git+https://github.com/boolnetwork/rust-dogecoincore-rpc.git#6596f7734b346a016b3612e7c875eb9857374dbf"
+source = "git+https://github.com/boolnetwork/rust-dogecoincore-rpc.git#74b856dac6baa8094df6d9b4c9889937a2a108f6"
 dependencies = [
  "bitcoincore-rpc-json",
  "jsonrpc",
@@ -111,7 +111,7 @@ dependencies = [
 [[package]]
 name = "bitcoincore-rpc-json"
 version = "0.16.0"
-source = "git+https://github.com/boolnetwork/rust-dogecoincore-rpc.git#6596f7734b346a016b3612e7c875eb9857374dbf"
+source = "git+https://github.com/boolnetwork/rust-dogecoincore-rpc.git#74b856dac6baa8094df6d9b4c9889937a2a108f6"
 dependencies = [
  "bitcoin",
  "serde",
