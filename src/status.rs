@@ -271,8 +271,20 @@ impl ScriptHashStatus {
         }
     }
 
-    pub(crate) fn get_history(&self) -> &[HistoryEntry] {
-        &self.history
+    pub(crate) fn get_history(&self, from: &Option<usize>, to: &Option<usize>) -> Vec<&HistoryEntry> {
+        let filter = self.history
+            .iter()
+            .filter(|item| {
+                let height = item.height.as_i64();
+                match (from, to) {
+                    (Some(from), Some(to)) => *from as i64 <= height && height <= *to as i64,
+                    (Some(from), None) => *from as i64 <= height,
+                    (None, Some(to)) => height <= *to as i64,
+                    (None, None) => true,
+                }
+            })
+            .collect::<Vec<&HistoryEntry>>();
+        filter
     }
 
     /// Collect all confirmed history entries (in block order).
