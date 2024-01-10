@@ -145,7 +145,7 @@ pub(crate) struct Balance {
 // https://electrumx-spesmilo.readthedocs.io/en/latest/protocol-methods.html#blockchain-scripthash-listunspent
 #[derive(Serialize)]
 pub(crate) struct UnspentEntry {
-    height: usize, // 0 = mempool entry
+    pub height: usize, // 0 = mempool entry
     tx_hash: Txid,
     tx_pos: u32,
     #[serde(with = "bitcoin::util::amount::serde::as_sat")]

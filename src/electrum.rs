@@ -26,6 +26,7 @@ use crate::{
     tracker::Tracker,
     types::ScriptHash,
 };
+use crate::status::UnspentEntry;
 
 const PROTOCOL_VERSION: &str = "1.4";
 const UNKNOWN_FEE: isize = -1; // (allowed by Electrum protocol)
@@ -350,6 +351,35 @@ impl Rpc {
         Ok(json!(unspent_entries))
     }
 
+    fn scripthash_list_unspent_filter(
+        &self,
+        client: &Client,
+        (scripthash, from, to): &(ScriptHash, Option<usize>, Option<usize>),
+    ) -> Result<Value> {
+        let unspent_entries = match client.scripthashes.get(scripthash) {
+            Some(status) => self.tracker.get_unspent(status),
+            None => {
+                info!(
+                    "{} blockchain.scripthash.listunspent called for unsubscribed scripthash: {}",
+                    UNSUBSCRIBED_QUERY_MESSAGE, scripthash
+                );
+                self.tracker.get_unspent(&self.new_status(*scripthash)?)
+            }
+        };
+        let filter = unspent_entries
+            .iter()
+            .filter(|item| {
+                match (from, to) {
+                    (Some(from), Some(to)) => *from <= item.height && item.height <= *to,
+                    (Some(from), None) => *from <= item.height,
+                    (None, Some(to)) => item.height <= *to,
+                    (None, None) => true,
+                }
+            })
+            .collect::<Vec<&UnspentEntry>>();
+        Ok(json!(filter))
+    }
+
     fn scripthash_subscribe(
         &self,
         client: &mut Client,
@@ -580,6 +610,7 @@ impl Rpc {
                 Params::ScriptHashGetHistory(args) => self.scripthash_get_history(client, args),
                 Params::ScriptHashGetHistoryFilter(args) => self.scripthash_get_history_filter(client, args),
                 Params::ScriptHashListUnspent(args) => self.scripthash_list_unspent(client, args),
+                Params::ScriptHashListUnspentFilter(args) => self.scripthash_list_unspent_filter(client, args),
                 Params::ScriptHashSubscribe(args) => self.scripthash_subscribe(client, args),
                 Params::WalletGetBalance(args) => self.wallet_get_balance(client, args),
                 Params::WalletGetHistory(args) => self.wallet_get_history(client, args),
@@ -614,6 +645,7 @@ enum Params {
     ScriptHashGetHistory((ScriptHash, )),
     ScriptHashGetHistoryFilter((ScriptHash, Option<usize>, Option<usize>, )),
     ScriptHashListUnspent((ScriptHash,)),
+    ScriptHashListUnspentFilter((ScriptHash, Option<usize>, Option<usize>, )),
     ScriptHashSubscribe((ScriptHash,)),
     WalletGetBalance((String,)),
     WalletGetHistory((String, )),
@@ -635,7 +667,9 @@ impl Params {
             "blockchain.relayfee" => Params::RelayFee,
             "blockchain.scripthash.get_balance" => Params::ScriptHashGetBalance(convert(params)?),
             "blockchain.scripthash.get_history" => Params::ScriptHashGetHistory(convert(params)?),
+            "blockchain.scripthash.get_history_filter" => Params::ScriptHashGetHistoryFilter(convert(params)?),
             "blockchain.scripthash.listunspent" => Params::ScriptHashListUnspent(convert(params)?),
+            "blockchain.scripthash.listunspent_filter" => Params::ScriptHashListUnspentFilter(convert(params)?),
             "blockchain.scripthash.subscribe" => Params::ScriptHashSubscribe(convert(params)?),
             "blockchain.wallet.get_balance" => Params::WalletGetBalance(convert(params)?),
             "blockchain.wallet.get_history" => Params::WalletGetHistory(convert(params)?),
