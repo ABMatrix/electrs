@@ -9,7 +9,7 @@ use rayon::prelude::*;
 use serde_derive::Deserialize;
 use serde_json::{self, json, Value};
 
-use std::iter::FromIterator;
+use std::{iter::FromIterator, option::Option};
 use std::{
     collections::{hash_map::Entry, HashMap},
     str::FromStr,
@@ -260,6 +260,12 @@ impl Rpc {
         self.scripthash_get_history(client, &(scripthash,))
     }
 
+    fn wallet_get_history_filter(&self, client: &Client, (address, from, to): &(String, Option<usize>, Option<usize>)) -> Result<Value> {
+        let addr = Address::from_str(address.as_str())?;
+        let scripthash = ScriptHash::new(&addr.script_pubkey());
+        self.scripthash_get_history_filter(client, &(scripthash, *from, *to))
+    }
+
     fn wallet_list_unspent(&self, client: &Client, (address,): &(String,)) -> Result<Value> {
         let addr = Address::from_str(address.as_str())?;
         let scripthash = ScriptHash::new(&addr.script_pubkey());
@@ -293,16 +299,34 @@ impl Rpc {
     fn scripthash_get_history(
         &self,
         client: &Client,
-        (scripthash,): &(ScriptHash,),
+        (scripthash, ): &(ScriptHash, ),
     ) -> Result<Value> {
         let history_entries = match client.scripthashes.get(scripthash) {
-            Some(status) => json!(status.get_history()),
+            Some(status) => json!(status.get_history(&None, &None)),
             None => {
                 info!(
                     "{} blockchain.scripthash.get_history called for unsubscribed scripthash: {}",
                     UNSUBSCRIBED_QUERY_MESSAGE, scripthash
                 );
-                json!(self.new_status(*scripthash)?.get_history())
+                json!(self.new_status(*scripthash)?.get_history(&None, &None))
+            }
+        };
+        Ok(history_entries)
+    }
+
+    fn scripthash_get_history_filter(
+        &self,
+        client: &Client,
+        (scripthash, from, to): &(ScriptHash, Option<usize>, Option<usize>),
+    ) -> Result<Value> {
+        let history_entries = match client.scripthashes.get(scripthash) {
+            Some(status) => json!(status.get_history(from, to)),
+            None => {
+                info!(
+                    "{} blockchain.scripthash.get_history called for unsubscribed scripthash: {}",
+                    UNSUBSCRIBED_QUERY_MESSAGE, scripthash
+                );
+                json!(self.new_status(*scripthash)?.get_history(from, to))
             }
         };
         Ok(history_entries)
@@ -554,10 +578,12 @@ impl Rpc {
                 Params::RelayFee => self.relayfee(),
                 Params::ScriptHashGetBalance(args) => self.scripthash_get_balance(client, args),
                 Params::ScriptHashGetHistory(args) => self.scripthash_get_history(client, args),
+                Params::ScriptHashGetHistoryFilter(args) => self.scripthash_get_history_filter(client, args),
                 Params::ScriptHashListUnspent(args) => self.scripthash_list_unspent(client, args),
                 Params::ScriptHashSubscribe(args) => self.scripthash_subscribe(client, args),
                 Params::WalletGetBalance(args) => self.wallet_get_balance(client, args),
                 Params::WalletGetHistory(args) => self.wallet_get_history(client, args),
+                Params::WalletGetHistoryFilter(args) => self.wallet_get_history_filter(client, args),
                 Params::WalletListUnspent(args) => self.wallet_list_unspent(client, args),
                 Params::WalletSubscribe(args) => self.wallet_subscribe(client, args),
                 Params::TransactionBroadcast(args) => self.transaction_broadcast(args),
@@ -585,11 +611,13 @@ enum Params {
     Ping,
     RelayFee,
     ScriptHashGetBalance((ScriptHash,)),
-    ScriptHashGetHistory((ScriptHash,)),
+    ScriptHashGetHistory((ScriptHash, )),
+    ScriptHashGetHistoryFilter((ScriptHash, Option<usize>, Option<usize>, )),
     ScriptHashListUnspent((ScriptHash,)),
     ScriptHashSubscribe((ScriptHash,)),
     WalletGetBalance((String,)),
-    WalletGetHistory((String,)),
+    WalletGetHistory((String, )),
+    WalletGetHistoryFilter((String, Option<usize>, Option<usize>)),
     WalletListUnspent((String,)),
     WalletSubscribe((String,)),
     TransactionGet(TxGetArgs),
@@ -607,10 +635,12 @@ impl Params {
             "blockchain.relayfee" => Params::RelayFee,
             "blockchain.scripthash.get_balance" => Params::ScriptHashGetBalance(convert(params)?),
             "blockchain.scripthash.get_history" => Params::ScriptHashGetHistory(convert(params)?),
+            "blockchain.scripthash.get_history_filter" => Params::ScriptHashGetHistoryFilter(convert(params)?),
             "blockchain.scripthash.listunspent" => Params::ScriptHashListUnspent(convert(params)?),
             "blockchain.scripthash.subscribe" => Params::ScriptHashSubscribe(convert(params)?),
             "blockchain.wallet.get_balance" => Params::WalletGetBalance(convert(params)?),
             "blockchain.wallet.get_history" => Params::WalletGetHistory(convert(params)?),
+            "blockchain.wallet.get_history_filter" => Params::WalletGetHistoryFilter(convert(params)?),
             "blockchain.wallet.listunspent" => Params::WalletListUnspent(convert(params)?),
             "blockchain.wallet.subscribe" => Params::WalletSubscribe(convert(params)?),
             "blockchain.transaction.broadcast" => Params::TransactionBroadcast(convert(params)?),
