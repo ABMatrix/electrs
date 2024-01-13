@@ -9,7 +9,7 @@ use rayon::prelude::*;
 use serde_derive::Deserialize;
 use serde_json::{self, json, Value};
 
-use std::iter::FromIterator;
+use std::{iter::FromIterator, option::Option};
 use std::{
     collections::{hash_map::Entry, HashMap},
     str::FromStr,
@@ -26,7 +26,6 @@ use crate::{
     tracker::Tracker,
     types::ScriptHash,
 };
-use crate::status::UnspentEntry;
 
 const PROTOCOL_VERSION: &str = "1.4";
 const UNKNOWN_FEE: isize = -1; // (allowed by Electrum protocol)
@@ -259,6 +258,12 @@ impl Rpc {
         let addr = Address::from_str(address.as_str())?;
         let scripthash = ScriptHash::new(&addr.script_pubkey());
         self.scripthash_get_history(client, &(scripthash,))
+    }
+
+    fn wallet_get_history_filter(&self, client: &Client, (address, from, to): &(String, Option<usize>, Option<usize>)) -> Result<Value> {
+        let addr = Address::from_str(address.as_str())?;
+        let scripthash = ScriptHash::new(&addr.script_pubkey());
+        self.scripthash_get_history_filter(client, &(scripthash, *from, *to))
     }
 
     fn wallet_list_unspent(&self, client: &Client, (address,): &(String,)) -> Result<Value> {
@@ -578,6 +583,7 @@ impl Rpc {
                 Params::ScriptHashSubscribe(args) => self.scripthash_subscribe(client, args),
                 Params::WalletGetBalance(args) => self.wallet_get_balance(client, args),
                 Params::WalletGetHistory(args) => self.wallet_get_history(client, args),
+                Params::WalletGetHistoryFilter(args) => self.wallet_get_history_filter(client, args),
                 Params::WalletListUnspent(args) => self.wallet_list_unspent(client, args),
                 Params::WalletSubscribe(args) => self.wallet_subscribe(client, args),
                 Params::TransactionBroadcast(args) => self.transaction_broadcast(args),
@@ -611,6 +617,7 @@ enum Params {
     ScriptHashSubscribe((ScriptHash,)),
     WalletGetBalance((String,)),
     WalletGetHistory((String, )),
+    WalletGetHistoryFilter((String, Option<usize>, Option<usize>)),
     WalletListUnspent((String,)),
     WalletSubscribe((String,)),
     TransactionGet(TxGetArgs),
@@ -633,6 +640,7 @@ impl Params {
             "blockchain.scripthash.subscribe" => Params::ScriptHashSubscribe(convert(params)?),
             "blockchain.wallet.get_balance" => Params::WalletGetBalance(convert(params)?),
             "blockchain.wallet.get_history" => Params::WalletGetHistory(convert(params)?),
+            "blockchain.wallet.get_history_filter" => Params::WalletGetHistoryFilter(convert(params)?),
             "blockchain.wallet.listunspent" => Params::WalletListUnspent(convert(params)?),
             "blockchain.wallet.subscribe" => Params::WalletSubscribe(convert(params)?),
             "blockchain.transaction.broadcast" => Params::TransactionBroadcast(convert(params)?),
