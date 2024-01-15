@@ -350,6 +350,25 @@ impl Rpc {
         Ok(json!(unspent_entries))
     }
 
+    fn scripthash_unspent_is_exist(
+        &self,
+        client: &Client,
+        (scripthash, tx_id): &(ScriptHash, Txid),
+    ) -> Result<Value> {
+        let unspent_entries = match client.scripthashes.get(scripthash) {
+            Some(status) => self.tracker.get_unspent(status),
+            None => {
+                info!(
+                    "{} blockchain.scripthash.listunspent called for unsubscribed scripthash: {}",
+                    UNSUBSCRIBED_QUERY_MESSAGE, scripthash
+                );
+                self.tracker.get_unspent(&self.new_status(*scripthash)?)
+            }
+        };
+        let is_exist = unspent_entries.iter().find(|unspent| &unspent.tx_hash == tx_id).is_some();
+        Ok(json!(is_exist))
+    }
+
     fn scripthash_subscribe(
         &self,
         client: &mut Client,
@@ -580,6 +599,7 @@ impl Rpc {
                 Params::ScriptHashGetHistory(args) => self.scripthash_get_history(client, args),
                 Params::ScriptHashGetHistoryFilter(args) => self.scripthash_get_history_filter(client, args),
                 Params::ScriptHashListUnspent(args) => self.scripthash_list_unspent(client, args),
+                Params::ScriptHashUnspentExist(args) => self.scripthash_unspent_is_exist(client, args),
                 Params::ScriptHashSubscribe(args) => self.scripthash_subscribe(client, args),
                 Params::WalletGetBalance(args) => self.wallet_get_balance(client, args),
                 Params::WalletGetHistory(args) => self.wallet_get_history(client, args),
@@ -614,6 +634,7 @@ enum Params {
     ScriptHashGetHistory((ScriptHash, )),
     ScriptHashGetHistoryFilter((ScriptHash, Option<usize>, Option<usize>, )),
     ScriptHashListUnspent((ScriptHash,)),
+    ScriptHashUnspentExist((ScriptHash, Txid, )),
     ScriptHashSubscribe((ScriptHash,)),
     WalletGetBalance((String,)),
     WalletGetHistory((String, )),
@@ -637,6 +658,7 @@ impl Params {
             "blockchain.scripthash.get_history" => Params::ScriptHashGetHistory(convert(params)?),
             "blockchain.scripthash.get_history_filter" => Params::ScriptHashGetHistoryFilter(convert(params)?),
             "blockchain.scripthash.listunspent" => Params::ScriptHashListUnspent(convert(params)?),
+            "blockchain.scripthash.unspent_exist" => Params::ScriptHashUnspentExist(convert(params)?),
             "blockchain.scripthash.subscribe" => Params::ScriptHashSubscribe(convert(params)?),
             "blockchain.wallet.get_balance" => Params::WalletGetBalance(convert(params)?),
             "blockchain.wallet.get_history" => Params::WalletGetHistory(convert(params)?),
