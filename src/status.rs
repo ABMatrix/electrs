@@ -146,7 +146,7 @@ pub(crate) struct Balance {
 #[derive(Serialize)]
 pub(crate) struct UnspentEntry {
     pub height: usize, // 0 = mempool entry
-    tx_hash: Txid,
+    pub tx_hash: Txid,
     tx_pos: u32,
     #[serde(with = "bitcoin::util::amount::serde::as_sat")]
     value: Amount,
