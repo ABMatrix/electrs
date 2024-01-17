@@ -1,15 +1,17 @@
 use anyhow::{bail, Context, Result};
-use bitcoin::{consensus::{deserialize, serialize}, hashes::hex::{FromHex, ToHex}, Address, BlockHash, Txid};
+use bitcoin::{
+    consensus::{deserialize, serialize},
+    hashes::hex::{FromHex, ToHex},
+    Address, BlockHash, Txid,
+};
 use crossbeam_channel::Receiver;
 use rayon::prelude::*;
 use serde_derive::Deserialize;
 use serde_json::{self, json, Value};
 
-use std::{iter::FromIterator, option::Option};
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    str::FromStr,
-};
+use std::collections::{hash_map::Entry, HashMap};
+use std::iter::FromIterator;
+use std::str::FromStr;
 
 use crate::{
     cache::Cache,
@@ -247,12 +249,6 @@ impl Rpc {
         Ok(json!(self.daemon.get_relay_fee()?.to_btc())) // [BTC/kB]
     }
 
-    fn wallet_get_balance(&self, client: &Client, (address,): &(String,)) -> Result<Value> {
-        let addr = Address::from_str(address.as_str())?;
-        let scripthash = ScriptHash::new(&addr.script_pubkey());
-        self.scripthash_get_balance(client, &(scripthash,))
-    }
-
     fn wallet_get_history(&self, client: &Client, (address,): &(String,)) -> Result<Value> {
         let addr = Address::from_str(address.as_str())?;
         let scripthash = ScriptHash::new(&addr.script_pubkey());
@@ -275,6 +271,12 @@ impl Rpc {
         let addr = Address::from_str(address.as_str())?;
         let scripthash = ScriptHash::new(&addr.script_pubkey());
         self.scripthash_subscribe(client, &(scripthash,))
+    }
+
+    fn wallet_get_balance(&self, client: &Client, (address,): &(String,)) -> Result<Value> {
+        let addr = Address::from_str(address.as_str())?;
+        let scripthash = ScriptHash::new(&addr.script_pubkey());
+        self.scripthash_get_balance(client, &(scripthash,))
     }
 
     fn scripthash_get_balance(
