@@ -1,3 +1,22 @@
+# 0.9.13 (Mar 31 2023)
+
+* Upgrade dependencies (`bitcoin` & `bitcoincore-rpc` #865, `crossbeam-channel` #854, `serde_json` #855, `tempfile` #850)
+* Don't panic on unexpected magic (#861)
+* contrib: rename xpub into get_balance (#627)
+
+# 0.9.12 (Feb 25 2023)
+
+* Update dependencies (`serde_json`, `signal-hook`, `electrs-bitcoincore-rpc`, `electrs-rocksdb`)
+* Add `CONTRIBUTING.md` (#838)
+* Add `blockchain.transaction.id_from_pos` RPC (#836)
+* Add `blockchain.scripthash.unsubscribe` RPC (#833)
+* Support IPv6 connections (#792)
+
+# 0.9.11 (Jan 5 2023)
+
+* Update dependencies (`secp256k1`, `serde_json`, `configure_me_codegen`, `env_logger`, `electrs-rocksdb`)
+* Improve error logging in case of p2p error (#807)
+
 # 0.9.10 (Nov 3 2022)
 
 * Update dependencies (`bitcoin`, `bitcoincore-rpc`, `tiny_http`, `serde_json`, `env_logger`)
