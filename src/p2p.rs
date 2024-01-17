@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use bitcoin::blockdata::block::Header as BlockHeader;
 use bitcoin::{
     consensus::{
         encode::{self, ReadExt, VarInt},
@@ -6,13 +7,14 @@ use bitcoin::{
     },
     hashes::Hash,
     network::{
-        address, constants,
+        address,
+        constants::{self, Magic},
         message::{self, CommandString, NetworkMessage},
         message_blockdata::{GetHeadersMessage, Inventory},
         message_network,
     },
     secp256k1::{self, rand::Rng},
-    Block, BlockHash, BlockHeader, Network,
+    Block, BlockHash, Network,
 };
 use crossbeam_channel::{bounded, select, Receiver, Sender};
 
@@ -71,9 +73,9 @@ impl Connection {
             .context("failed to get new headers")?;
 
         debug!("got {} new headers", headers.len());
-        let prev_blockhash = match headers.first().map(|h| h.prev_blockhash) {
+        let prev_blockhash = match headers.first() {
             None => return Ok(vec![]),
-            Some(prev_blockhash) => prev_blockhash,
+            Some(first) => first.prev_blockhash,
         };
         let new_heights = match chain.get_block_height(&prev_blockhash) {
             Some(last_height) => (last_height + 1)..,
@@ -129,7 +131,7 @@ impl Connection {
         network: Network,
         address: SocketAddr,
         metrics: &Metrics,
-        magic: u32,
+        magic: Magic,
     ) -> Result<Self> {
         let conn = Arc::new(
             TcpStream::connect(address)
@@ -214,8 +216,10 @@ impl Connection {
             }
             let raw_msg = match raw_msg {
                 Ok(raw_msg) => {
-                    assert_eq!(raw_msg.magic, magic);
                     recv_size.observe(raw_msg.cmd.as_ref(), raw_msg.raw.len() as f64);
+                    if raw_msg.magic != magic {
+                        bail!("unexpected magic {} (instead of {})", raw_msg.magic, magic)
+                    }
                     raw_msg
                 }
                 Err(encode::Error::Io(e)) if e.kind() == ErrorKind::UnexpectedEof => {
@@ -248,8 +252,10 @@ impl Connection {
                     };
 
                     let label = format!("parse_{}", raw_msg.cmd.as_ref());
-                    let msg = parse_duration
-                        .observe_duration(&label, || raw_msg.parse().expect("invalid message"));
+                    let msg = match parse_duration.observe_duration(&label, || raw_msg.parse()) {
+                        Ok(msg) => msg,
+                        Err(err) => bail!("failed to parse '{}({:?})': {}", raw_msg.cmd, raw_msg.raw, err),
+                    };
                     trace!("recv: {:?}", msg);
 
                     match msg {
@@ -332,13 +338,13 @@ fn build_version_message() -> NetworkMessage {
 }
 
 struct RawNetworkMessage {
-    magic: u32,
+    magic: Magic,
     cmd: CommandString,
     raw: Vec<u8>,
 }
 
 impl RawNetworkMessage {
-    fn parse(self) -> Result<NetworkMessage, encode::Error> {
+    fn parse(&self) -> Result<NetworkMessage> {
         let mut raw: &[u8] = &self.raw;
         let payload = match self.cmd.as_ref() {
             "version" => NetworkMessage::Version(Decodable::consensus_decode(&mut raw)?),
@@ -359,10 +365,11 @@ impl RawNetworkMessage {
             "reject" => NetworkMessage::Reject(Decodable::consensus_decode(&mut raw)?),
             "alert" => NetworkMessage::Alert(Decodable::consensus_decode(&mut raw)?),
             "addr" => NetworkMessage::Addr(Decodable::consensus_decode(&mut raw)?),
-            _ => NetworkMessage::Unknown {
-                command: self.cmd,
-                payload: self.raw,
-            },
+            _ => bail!(
+                "unsupported message: command={}, payload={:?}",
+                self.cmd,
+                self.raw
+            ),
         };
         Ok(payload)
     }

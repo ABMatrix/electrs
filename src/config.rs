@@ -1,4 +1,4 @@
-use bitcoin::network::constants::Network;
+use bitcoin::network::constants::{Magic, Network};
 use bitcoincore_rpc::Auth;
 use dirs_next::home_dir;
 
@@ -16,8 +16,6 @@ pub const ELECTRS_VERSION: &str = env!("CARGO_PKG_VERSION");
 const DEFAULT_SERVER_ADDRESS: [u8; 4] = [127, 0, 0, 1]; // by default, serve on IPv4 localhost
 
 mod internal {
-    #![allow(unused)]
-    #![allow(clippy::cognitive_complexity)]
     #![allow(clippy::enum_variant_names)]
     #![allow(clippy::unnecessary_lazy_evaluations)]
     #![allow(clippy::useless_conversion)]
@@ -144,7 +142,7 @@ pub struct Config {
     pub sync_once: bool,
     pub disable_electrum_rpc: bool,
     pub server_banner: String,
-    pub signet_magic: u32,
+    pub signet_magic: Magic,
     pub args: Vec<String>,
 }
 
@@ -198,11 +196,17 @@ impl Config {
             internal::Config::including_optional_config_files(default_config_files())
                 .unwrap_or_exit();
 
+        fn unsupported_network(network: Network) -> ! {
+            eprintln!("Error: unsupported network: {}", network);
+            std::process::exit(1);
+        }
+
         let db_subdir = match config.network {
             Network::Bitcoin => "bitcoin",
             Network::Testnet => "testnet",
             Network::Regtest => "regtest",
             Network::Signet => "signet",
+            unsupported => unsupported_network(unsupported),
         };
 
         config.db_dir.push(db_subdir);
@@ -212,36 +216,38 @@ impl Config {
             Network::Testnet => 18332,
             Network::Regtest => 18443,
             Network::Signet => 38332,
+            unsupported => unsupported_network(unsupported),
         };
         let default_daemon_p2p_port = match config.network {
             Network::Bitcoin => 8333,
             Network::Testnet => 18333,
             Network::Regtest => 18444,
             Network::Signet => 38333,
+            unsupported => unsupported_network(unsupported),
         };
         let default_electrum_port = match config.network {
             Network::Bitcoin => 50001,
             Network::Testnet => 60001,
             Network::Regtest => 60401,
             Network::Signet => 60601,
+            unsupported => unsupported_network(unsupported),
         };
         let default_monitoring_port = match config.network {
             Network::Bitcoin => 4224,
             Network::Testnet => 14224,
             Network::Regtest => 24224,
             Network::Signet => 34224,
+            unsupported => unsupported_network(unsupported),
         };
 
         let magic = match (config.network, config.signet_magic) {
-            (Network::Signet, Some(magic)) => u32::from_str_radix(&magic, 16)
-                .unwrap_or_else(|error| {
-                    eprintln!(
-                        "Error: signet magic '{}' is not a valid hex string: {}",
-                        magic, error
-                    );
-                    std::process::exit(1);
-                })
-                .swap_bytes(),
+            (Network::Signet, Some(magic)) => magic.parse().unwrap_or_else(|error| {
+                eprintln!(
+                    "Error: signet magic '{}' is not a valid hex string: {}",
+                    magic, error
+                );
+                std::process::exit(1);
+            }),
             (network, None) => network.magic(),
             (_, Some(_)) => {
                 eprintln!("Error: signet magic only available on signet");
@@ -278,6 +284,7 @@ impl Config {
             Network::Testnet => config.daemon_dir.push("testnet3"),
             Network::Regtest => config.daemon_dir.push("regtest"),
             Network::Signet => config.daemon_dir.push("signet"),
+            unsupported => unsupported_network(unsupported),
         }
 
         let daemon_dir = &config.daemon_dir;
@@ -293,7 +300,7 @@ impl Config {
                 Auth::UserPass(parts[0].to_owned(), parts[1].to_owned())
             }
             (Some(_), Some(_)) => {
-                eprintln!("Error: ambigous configuration - auth and cookie_file can't be specified at the same time");
+                eprintln!("Error: ambiguous configuration - auth and cookie_file can't be specified at the same time");
                 std::process::exit(1);
             }
         });

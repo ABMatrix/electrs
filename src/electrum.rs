@@ -1,9 +1,5 @@
 use anyhow::{bail, Context, Result};
-use bitcoin::{
-    consensus::{deserialize, serialize},
-    hashes::hex::{FromHex, ToHex},
-    Address, BlockHash, Txid,
-};
+use bitcoin::{consensus::{deserialize, encode::serialize_hex}, hashes::hex::FromHex, BlockHash, Txid};
 use crossbeam_channel::Receiver;
 use rayon::prelude::*;
 use serde_derive::Deserialize;
@@ -11,7 +7,6 @@ use serde_json::{self, json, Value};
 
 use std::collections::{hash_map::Entry, HashMap};
 use std::iter::FromIterator;
-use std::str::FromStr;
 
 use crate::{
     cache::Cache,
@@ -194,7 +189,7 @@ impl Rpc {
                 let header = chain.get_block_header(height).unwrap();
                 notifications.push(notification(
                     "blockchain.headers.subscribe",
-                    &[json!({"hex": serialize(&header).to_hex(), "height": height})],
+                    &[json!({"hex": serialize_hex(&header), "height": height})],
                 ));
             }
         }
@@ -206,7 +201,7 @@ impl Rpc {
         client.tip = Some(chain.tip());
         let height = chain.height();
         let header = chain.get_block_header(height).unwrap();
-        Ok(json!({"hex": serialize(header).to_hex(), "height": height}))
+        Ok(json!({"hex": serialize_hex(header), "height": height}))
     }
 
     fn block_header(&self, (height,): (usize,)) -> Result<Value> {
@@ -215,7 +210,7 @@ impl Rpc {
             None => bail!("no header at {}", height),
             Some(header) => header,
         };
-        Ok(json!(serialize(header).to_hex()))
+        Ok(json!(serialize_hex(header)))
     }
 
     fn block_headers(&self, (start_height, count): (usize, usize)) -> Result<Value> {
@@ -228,11 +223,8 @@ impl Rpc {
         );
         let heights = start_height..end_height;
         let count = heights.len();
-        let hex_headers = heights.filter_map(|height| {
-            chain
-                .get_block_header(height)
-                .map(|header| serialize(header).to_hex())
-        });
+        let hex_headers =
+            heights.filter_map(|height| chain.get_block_header(height).map(serialize_hex));
 
         Ok(json!({"count": count, "hex": String::from_iter(hex_headers), "max": max_count}))
     }
@@ -247,36 +239,6 @@ impl Rpc {
 
     fn relayfee(&self) -> Result<Value> {
         Ok(json!(self.daemon.get_relay_fee()?.to_btc())) // [BTC/kB]
-    }
-
-    fn wallet_get_history(&self, client: &Client, (address,): &(String,)) -> Result<Value> {
-        let addr = Address::from_str(address.as_str())?;
-        let scripthash = ScriptHash::new(&addr.script_pubkey());
-        self.scripthash_get_history(client, &(scripthash,))
-    }
-
-    fn wallet_get_history_filter(&self, client: &Client, (address, from, to): &(String, Option<usize>, Option<usize>)) -> Result<Value> {
-        let addr = Address::from_str(address.as_str())?;
-        let scripthash = ScriptHash::new(&addr.script_pubkey());
-        self.scripthash_get_history_filter(client, &(scripthash, *from, *to))
-    }
-
-    fn wallet_list_unspent(&self, client: &Client, (address,): &(String,)) -> Result<Value> {
-        let addr = Address::from_str(address.as_str())?;
-        let scripthash = ScriptHash::new(&addr.script_pubkey());
-        self.scripthash_list_unspent(client, &(scripthash,))
-    }
-
-    fn wallet_subscribe(&self, client: &mut Client, (address,): &(String,)) -> Result<Value> {
-        let addr = Address::from_str(address.as_str())?;
-        let scripthash = ScriptHash::new(&addr.script_pubkey());
-        self.scripthash_subscribe(client, &(scripthash,))
-    }
-
-    fn wallet_get_balance(&self, client: &Client, (address,): &(String,)) -> Result<Value> {
-        let addr = Address::from_str(address.as_str())?;
-        let scripthash = ScriptHash::new(&addr.script_pubkey());
-        self.scripthash_get_balance(client, &(scripthash,))
     }
 
     fn scripthash_get_balance(
@@ -380,6 +342,15 @@ impl Rpc {
             .unwrap()
     }
 
+    fn scripthash_unsubscribe(
+        &self,
+        client: &mut Client,
+        (scripthash,): &(ScriptHash,),
+    ) -> Result<Value> {
+        let removed = client.scripthashes.remove(scripthash).is_some();
+        Ok(json!(removed))
+    }
+
     fn scripthashes_subscribe<'a>(
         &self,
         client: &'a mut Client,
@@ -433,8 +404,8 @@ impl Rpc {
                 .map(|(blockhash, _tx)| blockhash);
             return self.daemon.get_transaction_info(&txid, blockhash);
         }
-        if let Some(tx) = self.cache.get_tx(&txid, |tx| serialize(tx)) {
-            return Ok(json!(tx.to_hex()));
+        if let Some(tx) = self.cache.get_tx(&txid, |tx| serialize_hex(tx)) {
+            return Ok(json!(tx));
         }
         debug!("tx cache miss: txid={}", txid);
         // use internal index to load confirmed transaction without an RPC
@@ -443,7 +414,7 @@ impl Rpc {
             .lookup_transaction(&self.daemon, txid)?
             .map(|(_blockhash, tx)| tx)
         {
-            return Ok(json!(serialize(&tx).to_hex()));
+            return Ok(json!(serialize_hex(&tx)));
         }
         // load unconfirmed transaction via RPC
         Ok(json!(self.daemon.get_transaction_hex(&txid, None)?))
@@ -466,6 +437,28 @@ impl Rpc {
                 "merkle": proof.to_hex(),
                 }))
             }
+        }
+    }
+
+    fn transaction_from_pos(
+        &self,
+        (height, tx_pos, merkle): (usize, usize, bool),
+    ) -> Result<Value> {
+        let chain = self.tracker.chain();
+        let blockhash = match chain.get_block_hash(height) {
+            None => bail!("missing block at {}", height),
+            Some(blockhash) => blockhash,
+        };
+        let txids = self.daemon.get_block_txids(blockhash)?;
+        if tx_pos >= txids.len() {
+            bail!("invalid tx_pos {} in block at height {}", tx_pos, height);
+        }
+        let txid: Txid = txids[tx_pos];
+        if merkle {
+            let proof = Proof::create(&txids, tx_pos);
+            Ok(json!({"tx_id": txid, "merkle": proof.to_hex()}))
+        } else {
+            Ok(json!({ "tx_id": txid }))
         }
     }
 
@@ -602,14 +595,11 @@ impl Rpc {
                 Params::ScriptHashListUnspent(args) => self.scripthash_list_unspent(client, args),
                 Params::ScriptHashUnspentExist(args) => self.scripthash_unspent_is_exist(client, args),
                 Params::ScriptHashSubscribe(args) => self.scripthash_subscribe(client, args),
-                Params::WalletGetBalance(args) => self.wallet_get_balance(client, args),
-                Params::WalletGetHistory(args) => self.wallet_get_history(client, args),
-                Params::WalletGetHistoryFilter(args) => self.wallet_get_history_filter(client, args),
-                Params::WalletListUnspent(args) => self.wallet_list_unspent(client, args),
-                Params::WalletSubscribe(args) => self.wallet_subscribe(client, args),
+                Params::ScriptHashUnsubscribe(args) => self.scripthash_unsubscribe(client, args),
                 Params::TransactionBroadcast(args) => self.transaction_broadcast(args),
                 Params::TransactionGet(args) => self.transaction_get(args),
                 Params::TransactionGetMerkle(args) => self.transaction_get_merkle(args),
+                Params::TransactionFromPosition(args) => self.transaction_from_pos(*args),
                 Params::Version(args) => self.version(args),
             };
             call.response(result)
@@ -637,13 +627,10 @@ enum Params {
     ScriptHashListUnspent((ScriptHash,)),
     ScriptHashUnspentExist((ScriptHash, Txid, )),
     ScriptHashSubscribe((ScriptHash,)),
-    WalletGetBalance((String,)),
-    WalletGetHistory((String, )),
-    WalletGetHistoryFilter((String, Option<usize>, Option<usize>)),
-    WalletListUnspent((String,)),
-    WalletSubscribe((String,)),
+    ScriptHashUnsubscribe((ScriptHash,)),
     TransactionGet(TxGetArgs),
     TransactionGetMerkle((Txid, usize)),
+    TransactionFromPosition((usize, usize, bool)),
     Version((String, Version)),
 }
 
@@ -661,14 +648,13 @@ impl Params {
             "blockchain.scripthash.listunspent" => Params::ScriptHashListUnspent(convert(params)?),
             "blockchain.scripthash.unspent_exist" => Params::ScriptHashUnspentExist(convert(params)?),
             "blockchain.scripthash.subscribe" => Params::ScriptHashSubscribe(convert(params)?),
-            "blockchain.wallet.get_balance" => Params::WalletGetBalance(convert(params)?),
-            "blockchain.wallet.get_history" => Params::WalletGetHistory(convert(params)?),
-            "blockchain.wallet.get_history_filter" => Params::WalletGetHistoryFilter(convert(params)?),
-            "blockchain.wallet.listunspent" => Params::WalletListUnspent(convert(params)?),
-            "blockchain.wallet.subscribe" => Params::WalletSubscribe(convert(params)?),
+            "blockchain.scripthash.unsubscribe" => Params::ScriptHashUnsubscribe(convert(params)?),
             "blockchain.transaction.broadcast" => Params::TransactionBroadcast(convert(params)?),
             "blockchain.transaction.get" => Params::TransactionGet(convert(params)?),
             "blockchain.transaction.get_merkle" => Params::TransactionGetMerkle(convert(params)?),
+            "blockchain.transaction.id_from_pos" => {
+                Params::TransactionFromPosition(convert(params)?)
+            }
             "mempool.get_fee_histogram" => Params::MempoolFeeHistogram,
             "server.banner" => Params::Banner,
             "server.donation_address" => Params::Donation,
