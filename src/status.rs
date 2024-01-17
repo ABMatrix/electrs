@@ -143,13 +143,13 @@ pub(crate) struct Balance {
 
 // A single unspent transaction output entry:
 // https://electrumx-spesmilo.readthedocs.io/en/latest/protocol-methods.html#blockchain-scripthash-listunspent
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub(crate) struct UnspentEntry {
     pub height: usize, // 0 = mempool entry
     pub tx_hash: Txid,
     tx_pos: u32,
     #[serde(with = "bitcoin::util::amount::serde::as_sat")]
-    value: Amount,
+    pub value: Amount,
 }
 
 #[derive(Default)]
@@ -222,7 +222,7 @@ impl ScriptHashStatus {
     pub fn new(scripthash: ScriptHash) -> Self {
         Self {
             scripthash,
-            tip: BlockHash::default(),
+            tip: BlockHash::all_zeros(),
             confirmed: HashMap::new(),
             mempool: Vec::new(),
             history: Vec::new(),

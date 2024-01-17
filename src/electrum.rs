@@ -9,11 +9,9 @@ use rayon::prelude::*;
 use serde_derive::Deserialize;
 use serde_json::{self, json, Value};
 
-use std::{iter::FromIterator, option::Option};
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    str::FromStr,
-};
+use std::collections::{hash_map::Entry, HashMap};
+use std::iter::FromIterator;
+use std::str::FromStr;
 
 use crate::{
     cache::Cache,
@@ -223,35 +221,32 @@ impl Rpc {
     fn block_headers(&self, (start_height, count): (usize, usize)) -> Result<Value> {
         let chain = self.tracker.chain();
         let max_count = 2016usize;
-
-        let count = std::cmp::min(
-            std::cmp::min(count, max_count),
-            chain.height() - start_height + 1,
+        // return only the available block headers
+        let end_height = std::cmp::min(
+            chain.height() + 1,
+            start_height + std::cmp::min(count, max_count),
         );
-        let heights = start_height..(start_height + count);
-        let hex_headers = String::from_iter(
-            heights.map(|height| serialize(chain.get_block_header(height).unwrap()).to_hex()),
-        );
+        let heights = start_height..end_height;
+        let count = heights.len();
+        let hex_headers = heights.filter_map(|height| {
+            chain
+                .get_block_header(height)
+                .map(|header| serialize(header).to_hex())
+        });
 
-        Ok(json!({"count": count, "hex": hex_headers, "max": max_count}))
+        Ok(json!({"count": count, "hex": String::from_iter(hex_headers), "max": max_count}))
     }
 
     fn estimate_fee(&self, (nblocks,): (u16,)) -> Result<Value> {
         Ok(self
             .daemon
             .estimate_fee(nblocks)?
-            .map(|fee_rate| json!(fee_rate.as_btc()))
+            .map(|fee_rate| json!(fee_rate.to_btc()))
             .unwrap_or_else(|| json!(UNKNOWN_FEE)))
     }
 
     fn relayfee(&self) -> Result<Value> {
-        Ok(json!(self.daemon.get_relay_fee()?.as_btc())) // [BTC/kB]
-    }
-
-    fn wallet_get_balance(&self, client: &Client, (address,): &(String,)) -> Result<Value> {
-        let addr = Address::from_str(address.as_str())?;
-        let scripthash = ScriptHash::new(&addr.script_pubkey());
-        self.scripthash_get_balance(client, &(scripthash,))
+        Ok(json!(self.daemon.get_relay_fee()?.to_btc())) // [BTC/kB]
     }
 
     fn wallet_get_history(&self, client: &Client, (address,): &(String,)) -> Result<Value> {
@@ -278,6 +273,12 @@ impl Rpc {
         self.scripthash_subscribe(client, &(scripthash,))
     }
 
+    fn wallet_get_balance(&self, client: &Client, (address,): &(String,)) -> Result<Value> {
+        let addr = Address::from_str(address.as_str())?;
+        let scripthash = ScriptHash::new(&addr.script_pubkey());
+        self.scripthash_get_balance(client, &(scripthash,))
+    }
+
     fn scripthash_get_balance(
         &self,
         client: &Client,
@@ -287,8 +288,8 @@ impl Rpc {
             Some(status) => self.tracker.get_balance(status),
             None => {
                 info!(
-                    "{} blockchain.scripthash.get_balance called for unsubscribed scripthash: {}",
-                    UNSUBSCRIBED_QUERY_MESSAGE, scripthash
+                    "{} blockchain.scripthash.get_balance called for unsubscribed scripthash",
+                    UNSUBSCRIBED_QUERY_MESSAGE
                 );
                 self.tracker.get_balance(&self.new_status(*scripthash)?)
             }
@@ -305,8 +306,8 @@ impl Rpc {
             Some(status) => json!(status.get_history(&None, &None)),
             None => {
                 info!(
-                    "{} blockchain.scripthash.get_history called for unsubscribed scripthash: {}",
-                    UNSUBSCRIBED_QUERY_MESSAGE, scripthash
+                    "{} blockchain.scripthash.get_history called for unsubscribed scripthash",
+                    UNSUBSCRIBED_QUERY_MESSAGE
                 );
                 json!(self.new_status(*scripthash)?.get_history(&None, &None))
             }
@@ -341,8 +342,8 @@ impl Rpc {
             Some(status) => self.tracker.get_unspent(status),
             None => {
                 info!(
-                    "{} blockchain.scripthash.listunspent called for unsubscribed scripthash: {}",
-                    UNSUBSCRIBED_QUERY_MESSAGE, scripthash
+                    "{} blockchain.scripthash.listunspent called for unsubscribed scripthash",
+                    UNSUBSCRIBED_QUERY_MESSAGE
                 );
                 self.tracker.get_unspent(&self.new_status(*scripthash)?)
             }
@@ -778,3 +779,4 @@ fn parse_requests(line: &str) -> Result<Requests, StandardError> {
         }
     }
 }
+

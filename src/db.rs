@@ -175,7 +175,7 @@ impl DBStore {
             );
             // close DB before deletion
             drop(store);
-            rocksdb::DB::destroy(&default_opts(), &path).with_context(|| {
+            rocksdb::DB::destroy(&default_opts(), path).with_context(|| {
                 format!(
                     "re-index required but the old database ({}) can not be deleted",
                     path.display()
@@ -293,14 +293,12 @@ impl DBStore {
             self.start_compactions();
         }
         if log_enabled!(log::Level::Trace) {
-            for property in &["rocksdb.dbstats"] {
-                let stats = self
-                    .db
-                    .property_value(property)
-                    .expect("failed to get property")
-                    .expect("missing property");
-                trace!("{}: {}", property, stats);
-            }
+            let stats = self
+                .db
+                .property_value("rocksdb.dbstats")
+                .expect("failed to get property")
+                .expect("missing property");
+            trace!("RocksDB stats: {}", stats);
         }
     }
 

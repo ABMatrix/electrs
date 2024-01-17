@@ -4,6 +4,7 @@ use bitcoin::{
         encode::{self, ReadExt, VarInt},
         Decodable,
     },
+    hashes::Hash,
     network::{
         address, constants,
         message::{self, CommandString, NetworkMessage},
@@ -35,7 +36,7 @@ impl Request {
     fn get_new_headers(chain: &Chain) -> Request {
         Request::GetNewHeaders(GetHeadersMessage::new(
             chain.locator(),
-            BlockHash::default(),
+            BlockHash::all_zeros(),
         ))
     }
 
@@ -128,6 +129,7 @@ impl Connection {
         network: Network,
         address: SocketAddr,
         metrics: &Metrics,
+        magic: u32,
     ) -> Result<Self> {
         let conn = Arc::new(
             TcpStream::connect(address)
@@ -186,7 +188,7 @@ impl Connection {
             send_duration.observe_duration("send", || {
                 trace!("send: {:?}", msg);
                 let raw_msg = message::RawNetworkMessage {
-                    magic: network.magic(),
+                    magic,
                     payload: msg,
                 };
                 (&*stream)
@@ -198,7 +200,7 @@ impl Connection {
         let stream = Arc::clone(&conn);
         crate::thread::spawn("p2p_recv", move || loop {
             let start = Instant::now();
-            let raw_msg = RawNetworkMessage::consensus_decode(&*stream);
+            let raw_msg = RawNetworkMessage::consensus_decode(&mut &*stream);
             {
                 let duration = duration_to_seconds(start.elapsed());
                 let label = format!(
@@ -212,7 +214,7 @@ impl Connection {
             }
             let raw_msg = match raw_msg {
                 Ok(raw_msg) => {
-                    assert_eq!(raw_msg.magic, network.magic());
+                    assert_eq!(raw_msg.magic, magic);
                     recv_size.observe(raw_msg.cmd.as_ref(), raw_msg.raw.len() as f64);
                     raw_msg
                 }
@@ -367,12 +369,12 @@ impl RawNetworkMessage {
 }
 
 impl Decodable for RawNetworkMessage {
-    fn consensus_decode<D: io::Read>(mut d: D) -> Result<Self, encode::Error> {
-        let magic = Decodable::consensus_decode(&mut d)?;
-        let cmd = Decodable::consensus_decode(&mut d)?;
+    fn consensus_decode<D: io::Read + ?Sized>(d: &mut D) -> Result<Self, encode::Error> {
+        let magic = Decodable::consensus_decode(d)?;
+        let cmd = Decodable::consensus_decode(d)?;
 
-        let len = u32::consensus_decode(&mut d)?;
-        let _checksum = <[u8; 4]>::consensus_decode(&mut d)?; // assume data is correct
+        let len = u32::consensus_decode(d)?;
+        let _checksum = <[u8; 4]>::consensus_decode(d)?; // assume data is correct
         let mut raw = vec![0u8; len as usize];
         d.read_slice(&mut raw)?;
 
