@@ -149,7 +149,7 @@ pub(crate) struct UnspentEntry {
     pub tx_hash: Txid,
     tx_pos: u32,
     #[serde(with = "bitcoin::amount::serde::as_sat")]
-    value: Amount,
+    pub value: Amount,
 }
 
 #[derive(Default)]

@@ -1,10 +1,9 @@
 use anyhow::{bail, Context, Result};
-use bitcoin::{consensus::{deserialize, encode::serialize_hex}, hashes::hex::FromHex, BlockHash, Txid};
+use bitcoin::{consensus::{deserialize, encode::serialize_hex}, hashes::hex::FromHex, BlockHash, Txid, Amount};
 use crossbeam_channel::Receiver;
 use rayon::prelude::*;
 use serde_derive::Deserialize;
 use serde_json::{self, json, Value};
-
 use std::collections::{hash_map::Entry, HashMap};
 use std::iter::FromIterator;
 
@@ -19,6 +18,7 @@ use crate::{
     tracker::Tracker,
     types::ScriptHash,
 };
+use crate::status::UnspentEntry;
 
 const PROTOCOL_VERSION: &str = "1.4";
 const UNKNOWN_FEE: isize = -1; // (allowed by Electrum protocol)
@@ -313,6 +313,45 @@ impl Rpc {
         Ok(json!(unspent_entries))
     }
 
+    fn scripthash_select_unspent(
+        &self,
+        client: &Client,
+        (scripthash, amounts, min_amount, confirmed): &(ScriptHash, Vec<u64>, u64, bool),
+    ) -> Result<Value> {
+        let mut unspent_entries = match client.scripthashes.get(scripthash) {
+            Some(status) => self.tracker.get_unspent(status),
+            None => {
+                info!(
+                "{} blockchain.scripthash.listunspent called for unsubscribed scripthash",
+                UNSUBSCRIBED_QUERY_MESSAGE
+            );
+                self.tracker.get_unspent(&self.new_status(*scripthash)?)
+            }
+        };
+        let filter_confirmed = |utxo: &UnspentEntry, confirmed| {
+            if confirmed {
+                utxo.height > 0
+            } else {
+                true
+            }
+        };
+        unspent_entries.retain(|utxo| utxo.value >= Amount::from_sat(*min_amount) && filter_confirmed(utxo, *confirmed));
+        unspent_entries.sort_by(|a, b| a.value.partial_cmp(&b.value).unwrap());
+
+        let mut choose_list = Vec::new();
+        for target_amount in amounts {
+            let (mut part_choose_list, part_index) = select_utxos(&unspent_entries, Amount::from_sat(*target_amount));
+            for (iter_index, selcet_index) in part_index.iter().enumerate() {
+                unspent_entries.remove(selcet_index - iter_index);
+            }
+            choose_list.append(&mut part_choose_list);
+        }
+        info!(
+            "choose_list len for req: {:?}", choose_list.len(),
+        );
+        Ok(json!(choose_list))
+    }
+
     fn scripthash_unspent_is_exist(
         &self,
         client: &Client,
@@ -593,6 +632,7 @@ impl Rpc {
                 Params::ScriptHashGetHistory(args) => self.scripthash_get_history(client, args),
                 Params::ScriptHashGetHistoryFilter(args) => self.scripthash_get_history_filter(client, args),
                 Params::ScriptHashListUnspent(args) => self.scripthash_list_unspent(client, args),
+                Params::ScriptHashSelectUnspent(args) => self.scripthash_select_unspent(client, args),
                 Params::ScriptHashUnspentExist(args) => self.scripthash_unspent_is_exist(client, args),
                 Params::ScriptHashSubscribe(args) => self.scripthash_subscribe(client, args),
                 Params::ScriptHashUnsubscribe(args) => self.scripthash_unsubscribe(client, args),
@@ -625,6 +665,7 @@ enum Params {
     ScriptHashGetHistory((ScriptHash, )),
     ScriptHashGetHistoryFilter((ScriptHash, Option<usize>, Option<usize>, )),
     ScriptHashListUnspent((ScriptHash,)),
+    ScriptHashSelectUnspent((ScriptHash, Vec<u64>, u64, bool, )),
     ScriptHashUnspentExist((ScriptHash, Txid, )),
     ScriptHashSubscribe((ScriptHash,)),
     ScriptHashUnsubscribe((ScriptHash,)),
@@ -647,6 +688,7 @@ impl Params {
             "blockchain.scripthash.get_history_filter" => Params::ScriptHashGetHistoryFilter(convert(params)?),
             "blockchain.scripthash.listunspent" => Params::ScriptHashListUnspent(convert(params)?),
             "blockchain.scripthash.unspent_exist" => Params::ScriptHashUnspentExist(convert(params)?),
+            "blockchain.scripthash.select_unspent" => Params::ScriptHashSelectUnspent(convert(params)?),
             "blockchain.scripthash.subscribe" => Params::ScriptHashSubscribe(convert(params)?),
             "blockchain.scripthash.unsubscribe" => Params::ScriptHashUnsubscribe(convert(params)?),
             "blockchain.transaction.broadcast" => Params::TransactionBroadcast(convert(params)?),
@@ -765,4 +807,70 @@ fn parse_requests(line: &str) -> Result<Requests, StandardError> {
         }
     }
 }
+
+fn select_utxos(
+    utxos: &[UnspentEntry],
+    target_value: Amount,
+) -> (Vec<UnspentEntry>, Vec<usize>) {
+    let mut choose_list = Vec::new();
+    let mut choose_index = Vec::new();
+    if utxos.len() <= 3 {
+        for (index, utxo) in utxos.iter().enumerate() {
+            choose_list.push(utxo.clone());
+            choose_index.push(index);
+        }
+        return (choose_list, choose_index);
+    } else {
+        let utxo_len = utxos.len();
+        if let Some((index, _middle_utxo)) = utxos
+            .iter()
+            .enumerate()
+            .find(|utxo| utxo.1.value >= target_value)
+        {
+            let select_index = if index == 0 {
+                // first utxo is enough
+                vec![0, 1, 2]
+            } else if index == utxo_len - 1 {
+                // last utxo is enough
+                vec![0, utxo_len - 2, utxo_len - 1]
+            } else {
+                // find one middle utxo enough
+                if let Some((new_index, _new_utxo)) = utxos[index + 1..]
+                    .iter()
+                    .enumerate()
+                    .find(|utxo| utxo.1.height > 0)
+                {
+                    // find another confirmed big utxo
+                    vec![0, index, new_index + index + 1]
+                } else {
+                    // no confirmed bit utxo, select last one
+                    vec![0, index, utxo_len - 1]
+                }
+            };
+            for i in select_index {
+                choose_list.push(utxos[i].clone());
+                choose_index.push(i);
+            }
+        } else {
+            let mut total_amount = Amount::from_sat(0);
+            let max_len = std::cmp::min(utxo_len, 20);
+            // max inputs length is '20'
+            for i in 0..=max_len {
+                total_amount += utxos[utxo_len - 1 - i].value;
+                choose_index.push(utxo_len - 1 - i);
+                choose_list.push(utxos[utxo_len - 1 - i].clone());
+                if total_amount > target_value {
+                    break;
+                }
+            }
+            // push small utxo to make inputs length to 3
+            if choose_list.len() < 3 {
+                choose_list.push(utxos[0].clone());
+                choose_index.push(0);
+            }
+        };
+    }
+    (choose_list, choose_index)
+}
+
 
