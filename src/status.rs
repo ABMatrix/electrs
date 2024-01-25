@@ -276,8 +276,13 @@ impl ScriptHashStatus {
         }
     }
 
-    pub(crate) fn get_history(&self, from: &Option<usize>, to: &Option<usize>) -> Vec<&HistoryEntry> {
-        let filter = self.history
+    pub(crate) fn get_history(
+        &self,
+        from: &Option<usize>,
+        to: &Option<usize>,
+    ) -> Vec<&HistoryEntry> {
+        let filter = self
+            .history
             .iter()
             .filter(|item| {
                 let height = item.height.as_i64();

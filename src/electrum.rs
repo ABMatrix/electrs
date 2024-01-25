@@ -1,5 +1,10 @@
+use crate::status::UnspentEntry;
 use anyhow::{bail, Context, Result};
-use bitcoin::{consensus::{deserialize, encode::serialize_hex}, hashes::hex::FromHex, BlockHash, Txid, Amount};
+use bitcoin::{
+    consensus::{deserialize, encode::serialize_hex},
+    hashes::hex::FromHex,
+    Amount, BlockHash, Txid,
+};
 use crossbeam_channel::Receiver;
 use rayon::prelude::*;
 use serde_derive::Deserialize;
@@ -20,7 +25,6 @@ use crate::{
     tracker::Tracker,
     types::ScriptHash,
 };
-use crate::status::UnspentEntry;
 
 const PROTOCOL_VERSION: &str = "1.4";
 const UNKNOWN_FEE: isize = -1; // (allowed by Electrum protocol)
@@ -264,13 +268,13 @@ impl Rpc {
     fn scripthash_get_history(
         &self,
         client: &Client,
-        (scripthash, ): &(ScriptHash, ),
+        (scripthash,): &(ScriptHash,),
     ) -> Result<Value> {
         let history_entries = match client.scripthashes.get(scripthash) {
             Some(status) => json!(status.get_history(&None, &None)),
             None => {
                 info!(
-                    "{} blockchain.scripthash.get_history called for unsubscribed scripthash",
+                    "{} blockchain.scripthash.listunspent called for unsubscribed scripthash",
                     UNSUBSCRIBED_QUERY_MESSAGE
                 );
                 json!(self.new_status(*scripthash)?.get_history(&None, &None))
@@ -324,9 +328,9 @@ impl Rpc {
             Some(status) => self.tracker.get_unspent(status),
             None => {
                 info!(
-                "{} blockchain.scripthash.listunspent called for unsubscribed scripthash",
-                UNSUBSCRIBED_QUERY_MESSAGE
-            );
+                    "{} blockchain.scripthash.listunspent called for unsubscribed scripthash",
+                    UNSUBSCRIBED_QUERY_MESSAGE
+                );
                 self.tracker.get_unspent(&self.new_status(*scripthash)?)
             }
         };
@@ -337,20 +341,21 @@ impl Rpc {
                 true
             }
         };
-        unspent_entries.retain(|utxo| utxo.value >= Amount::from_sat(*min_amount) && filter_confirmed(utxo, *confirmed));
+        unspent_entries.retain(|utxo| {
+            utxo.value >= Amount::from_sat(*min_amount) && filter_confirmed(utxo, *confirmed)
+        });
         unspent_entries.sort_by(|a, b| a.value.partial_cmp(&b.value).unwrap());
 
         let mut choose_list = Vec::new();
         for target_amount in amounts {
-            let (mut part_choose_list, part_index) = select_utxos(&unspent_entries, Amount::from_sat(*target_amount));
+            let (mut part_choose_list, part_index) =
+                select_utxos(&unspent_entries, Amount::from_sat(*target_amount));
             for (iter_index, selcet_index) in part_index.iter().enumerate() {
                 unspent_entries.remove(selcet_index - iter_index);
             }
             choose_list.append(&mut part_choose_list);
         }
-        info!(
-            "choose_list len for req: {:?}", choose_list.len(),
-        );
+        info!("choose_list len for req: {:?}", choose_list.len());
         Ok(json!(choose_list))
     }
 
@@ -369,7 +374,9 @@ impl Rpc {
                 self.tracker.get_unspent(&self.new_status(*scripthash)?)
             }
         };
-        let is_exist = unspent_entries.iter().find(|unspent| &unspent.tx_hash == tx_id).is_some();
+        let is_exist = unspent_entries
+            .iter()
+            .any(|unspent| &unspent.tx_hash == tx_id);
         Ok(json!(is_exist))
     }
 
@@ -625,10 +632,16 @@ impl Rpc {
                 Params::RelayFee => self.relayfee(),
                 Params::ScriptHashGetBalance(args) => self.scripthash_get_balance(client, args),
                 Params::ScriptHashGetHistory(args) => self.scripthash_get_history(client, args),
-                Params::ScriptHashGetHistoryFilter(args) => self.scripthash_get_history_filter(client, args),
+                Params::ScriptHashGetHistoryFilter(args) => {
+                    self.scripthash_get_history_filter(client, args)
+                }
                 Params::ScriptHashListUnspent(args) => self.scripthash_list_unspent(client, args),
-                Params::ScriptHashSelectUnspent(args) => self.scripthash_select_unspent(client, args),
-                Params::ScriptHashUnspentExist(args) => self.scripthash_unspent_is_exist(client, args),
+                Params::ScriptHashSelectUnspent(args) => {
+                    self.scripthash_select_unspent(client, args)
+                }
+                Params::ScriptHashUnspentExist(args) => {
+                    self.scripthash_unspent_is_exist(client, args)
+                }
                 Params::ScriptHashSubscribe(args) => self.scripthash_subscribe(client, args),
                 Params::ScriptHashUnsubscribe(args) => self.scripthash_unsubscribe(client, args),
                 Params::TransactionBroadcast(args) => self.transaction_broadcast(args),
@@ -657,11 +670,11 @@ enum Params {
     Ping,
     RelayFee,
     ScriptHashGetBalance((ScriptHash,)),
-    ScriptHashGetHistory((ScriptHash, )),
-    ScriptHashGetHistoryFilter((ScriptHash, Option<usize>, Option<usize>, )),
+    ScriptHashGetHistory((ScriptHash,)),
+    ScriptHashGetHistoryFilter((ScriptHash, Option<usize>, Option<usize>)),
     ScriptHashListUnspent((ScriptHash,)),
-    ScriptHashSelectUnspent((ScriptHash, Vec<u64>, u64, bool, )),
-    ScriptHashUnspentExist((ScriptHash, Txid, )),
+    ScriptHashSelectUnspent((ScriptHash, Vec<u64>, u64, bool)),
+    ScriptHashUnspentExist((ScriptHash, Txid)),
     ScriptHashSubscribe((ScriptHash,)),
     ScriptHashUnsubscribe((ScriptHash,)),
     TransactionGet(TxGetArgs),
@@ -680,10 +693,16 @@ impl Params {
             "blockchain.relayfee" => Params::RelayFee,
             "blockchain.scripthash.get_balance" => Params::ScriptHashGetBalance(convert(params)?),
             "blockchain.scripthash.get_history" => Params::ScriptHashGetHistory(convert(params)?),
-            "blockchain.scripthash.get_history_filter" => Params::ScriptHashGetHistoryFilter(convert(params)?),
+            "blockchain.scripthash.get_history_filter" => {
+                Params::ScriptHashGetHistoryFilter(convert(params)?)
+            }
             "blockchain.scripthash.listunspent" => Params::ScriptHashListUnspent(convert(params)?),
-            "blockchain.scripthash.unspent_exist" => Params::ScriptHashUnspentExist(convert(params)?),
-            "blockchain.scripthash.select_unspent" => Params::ScriptHashSelectUnspent(convert(params)?),
+            "blockchain.scripthash.unspent_exist" => {
+                Params::ScriptHashUnspentExist(convert(params)?)
+            }
+            "blockchain.scripthash.select_unspent" => {
+                Params::ScriptHashSelectUnspent(convert(params)?)
+            }
             "blockchain.scripthash.subscribe" => Params::ScriptHashSubscribe(convert(params)?),
             "blockchain.scripthash.unsubscribe" => Params::ScriptHashUnsubscribe(convert(params)?),
             "blockchain.transaction.broadcast" => Params::TransactionBroadcast(convert(params)?),
@@ -839,10 +858,7 @@ fn check_between(version_str: &str, min_str: &str, max_str: &str) -> Result<()> 
     Ok(())
 }
 
-fn select_utxos(
-    utxos: &[UnspentEntry],
-    target_value: Amount,
-) -> (Vec<UnspentEntry>, Vec<usize>) {
+fn select_utxos(utxos: &[UnspentEntry], target_value: Amount) -> (Vec<UnspentEntry>, Vec<usize>) {
     let mut choose_list = Vec::new();
     let mut choose_index = Vec::new();
     if utxos.len() <= 3 {
